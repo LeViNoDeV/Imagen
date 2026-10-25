@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "imagen"
+version = "0.1.0"
+description = "Generate realistic images from text with local diffusion models or hosted APIs"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "pillow>=10",
+    "httpx>=0.27",
+    "fastapi>=0.110",
+    "uvicorn>=0.29",
+]
+
+[project.optional-dependencies]
+local = [
+    "torch>=2.2",
+    "diffusers>=0.30",
+    "transformers>=4.40",
+    "accelerate>=0.30",
+    "sentencepiece",
+    "protobuf",
+]
+dev = ["pytest>=8", "ruff>=0.5"]
+
+[project.scripts]
+imagen = "imagen.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["imagen*"]
+
+[tool.setuptools.package-data]
+imagen = ["static/*"]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]

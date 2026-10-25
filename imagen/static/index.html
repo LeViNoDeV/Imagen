@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Imagen</title>
+<style>
+  :root {
+    --bg: #f6f5f2; --panel: #ffffff; --text: #1d1c1a; --muted: #6b6862;
+    --border: #e2dfd8; --accent: #2f5d50; --accent-text: #ffffff; --error: #a8322d;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #151514; --panel: #1f1e1c; --text: #ecebe7; --muted: #9a978f;
+      --border: #34322e; --accent: #7fb8a4; --accent-text: #10201b; --error: #ef8a83;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  main { max-width: 1200px; margin: 0 auto; padding: 24px 16px 48px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .sub { color: var(--muted); margin: 0 0 20px; }
+  .layout { display: grid; grid-template-columns: 340px 1fr; gap: 24px; align-items: start; }
+  @media (max-width: 820px) { .layout { grid-template-columns: 1fr; } }
+  form {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+    padding: 16px; display: grid; gap: 12px;
+  }
+  label { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
+  textarea, input, select {
+    font: inherit; color: var(--text); background: var(--bg);
+    border: 1px solid var(--border); border-radius: 6px; padding: 8px; width: 100%;
+  }
+  textarea { resize: vertical; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+  details[open] summary { margin-bottom: 10px; }
+  details > div { display: grid; gap: 12px; }
+  button {
+    font: inherit; font-weight: 600; border: 0; border-radius: 6px; padding: 10px;
+    background: var(--accent); color: var(--accent-text); cursor: pointer;
+  }
+  button:disabled { opacity: .6; cursor: progress; }
+  .status { font-size: 13px; color: var(--muted); min-height: 1.5em; }
+  .status.error { color: var(--error); }
+  .gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; }
+  figure {
+    margin: 0; background: var(--panel); border: 1px solid var(--border);
+    border-radius: 10px; overflow: hidden;
+  }
+  figure img { display: block; width: 100%; height: auto; }
+  figcaption { padding: 8px 10px; font-size: 12px; color: var(--muted); display: flex; gap: 8px; }
+  figcaption span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  figcaption a { color: var(--accent); }
+  .empty {
+    border: 1px dashed var(--border); border-radius: 10px; padding: 48px 16px;
+    text-align: center; color: var(--muted);
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>Imagen</h1>
+  <p class="sub">Describe a scene and get a realistic photograph of it.</p>
+  <div class="layout">
+    <form id="form">
+      <label>Prompt
+        <textarea name="prompt" rows="4" required
+          placeholder="An elderly fisherman mending nets on a wooden dock at dawn, mist over the harbor"></textarea>
+      </label>
+      <div class="row">
+        <label>Style <select name="style" id="style"></select></label>
+        <label>Aspect <select name="aspect" id="aspect"></select></label>
+      </div>
+      <div class="row">
+        <label>Backend <select name="backend" id="backend"></select></label>
+        <label>Images <input name="num_images" type="number" min="1" max="4" value="1"></label>
+      </div>
+      <details>
+        <summary>Advanced</summary>
+        <div>
+          <label>Model <input name="model" id="model" list="models" placeholder="backend default"></label>
+          <datalist id="models"></datalist>
+          <label>Negative prompt
+            <textarea name="negative_prompt" rows="2" placeholder="Extra things to avoid"></textarea>
+          </label>
+          <div class="row">
+            <label>Steps <input name="steps" type="number" min="1" max="150" placeholder="auto"></label>
+            <label>Guidance <input name="guidance" type="number" min="0" max="30" step="0.5" placeholder="auto"></label>
+          </div>
+          <label>Seed <input name="seed" type="number" min="0" placeholder="random"></label>
+        </div>
+      </details>
+      <button id="go" type="submit">Generate</button>
+      <div class="status" id="status" role="status"></div>
+    </form>
+    <section>
+      <div class="gallery" id="gallery"></div>
+      <div class="empty" id="empty">Your images will appear here.</div>
+    </section>
+  </div>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const form = $("form"), status = $("status");
+
+function option(value, text, disabled = false) {
+  const o = document.createElement("option");
+  o.value = value; o.textContent = text; o.disabled = disabled;
+  return o;
+}
+
+async function loadOptions() {
+  const opts = await (await fetch("/api/options")).json();
+  for (const [name, desc] of Object.entries(opts.styles)) $("style").append(option(name, `${name} - ${desc}`));
+  for (const a of opts.aspects) $("aspect").append(option(a, a));
+  const anyReal = opts.backends.some((b) => b.available && b.name !== "mock");
+  $("backend").append(option("auto", "auto", !anyReal));
+  for (const b of opts.backends) {
+    $("backend").append(option(b.name, b.available ? b.name : `${b.name} (${b.reason})`, !b.available));
+  }
+  $("backend").value = anyReal ? "auto" : "mock";
+  if (!anyReal) setStatus("No real backend configured - using mock images. See README to set one up.");
+  for (const m of opts.local_models) $("models").append(option(m, m));
+}
+
+function setStatus(text, isError = false) {
+  status.textContent = text;
+  status.classList.toggle("error", isError);
+}
+
+function addImage(img, data) {
+  const fig = document.createElement("figure");
+  const el = document.createElement("img");
+  el.src = img.url; el.alt = data.prompt; el.loading = "lazy";
+  const cap = document.createElement("figcaption");
+  const info = document.createElement("span");
+  info.textContent = `${data.model}${img.seed != null ? " · seed " + img.seed : ""}`;
+  info.title = data.prompt;
+  const dl = document.createElement("a");
+  dl.href = img.url; dl.download = ""; dl.textContent = "Download";
+  cap.append(info, dl);
+  fig.append(el, cap);
+  $("gallery").prepend(fig);
+  $("empty").hidden = true;
+}
+
+form.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const body = {};
+  for (const [key, value] of new FormData(form)) {
+    if (value === "") continue;
+    body[key] = ["num_images", "steps", "seed"].includes(key) ? parseInt(value, 10)
+      : key === "guidance" ? parseFloat(value) : value;
+  }
+  $("go").disabled = true;
+  setStatus("Generating... local models can take a while on the first run while weights download.");
+  try {
+    const res = await fetch("/api/generate", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      const detail = Array.isArray(data.detail) ? data.detail.map((d) => d.msg).join("; ") : data.detail;
+      throw new Error(detail || res.statusText);
+    }
+    [...data.images].reverse().forEach((img) => addImage(img, data));
+    setStatus(`Done in ${data.elapsed_seconds}s with ${data.backend} / ${data.model}.`);
+  } catch (err) {
+    setStatus(err.message, true);
+  } finally {
+    $("go").disabled = false;
+  }
+});
+
+loadOptions().catch((err) => setStatus("Could not load options: " + err.message, true));
+</script>
+</body>
+</html>
